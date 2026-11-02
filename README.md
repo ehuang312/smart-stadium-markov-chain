@@ -65,3 +65,7 @@ Training data is cfbfastR college play-by-play from the [SportsDataverse release
 ## Versioning
 
 Each model update is saved as a new numbered file in `versions/`, and `markovChain.py` is updated to match. Old versions and `archive/` are never deleted. See [versions/README.md](versions/README.md).
+
+## Asking Claude on GitHub
+
+Collaborators can write `@claude` in an issue, a pull request or a review comment to get help from Claude, which replies in the thread and can push a branch with changes. Only the repo owner and invited collaborators can trigger it ([.github/workflows/claude.yml](.github/workflows/claude.yml)), and pull requests from outside contributors need the owner's approval before any workflow runs.
