@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
 sys.path.append(root_dir)
-from markovChain import PlayMarkovChain, MARKERS, DEFAULT_MARKERS, PLAY_TYPES, team_run_rates
+from markovChain import PlayMarkovChain, MARKERS, DEFAULT_MARKERS, PLAY_TYPES, team_run_rates, prefilter_plays
 
 REAL_DATA = os.path.join(root_dir, 'data', 'cfb_pbp', 'play_by_play_2017.parquet')
 
@@ -186,6 +186,38 @@ class TestPlayMarkovChain(unittest.TestCase):
             return -np.log(P[np.arange(len(y)), y]).mean()
 
         self.assertLess(log_loss(PlayMarkovChain()), log_loss(PlayMarkovChain(markers=())) - 0.25)
+
+
+class TestPrefilterPlays(unittest.TestCase):
+
+    def setUp(self):
+        self.raw = pd.DataFrame([
+            play(down=1, distance=10, yards_to_goal=75),               # 0: fine
+            play(down=0, distance=10, yards_to_goal=75),               # 1: down 0 -> dropped
+            play(down=1, distance=10, yards_to_goal=0),                # 2: snap on the goal line -> dropped
+            play(down=1, distance=0, yards_to_goal=5),                 # 3: goal-to-go, distance blank -> 5
+            play(down=4, distance=0, yards_to_goal=18),                # 4: distance unknown -> dropped
+            play(down=2, distance=15, yards_to_goal=5),                # 5: distance past the goal -> 5
+            play(down=0, distance=0, yards_to_goal=100, play_type='K'),  # 6: kickoff, untouched
+        ])
+        self.raw['play_id'] = range(len(self.raw))
+
+    def test_drops_and_repairs(self):
+        '''TEST 14: impossible plays are dropped or repaired, kickoffs pass through'''
+        clean, counts = prefilter_plays(self.raw, report=True)
+        self.assertEqual(list(clean.play_id), [0, 3, 5, 6])
+        self.assertEqual(list(clean.distance), [10, 5, 5, 0])
+        self.assertEqual(counts, {'dropped: down not 1-4': 1, 'dropped: yards_to_goal not 1-99': 1,
+                                  'dropped: no distance outside goal-to-go': 1,
+                                  'repaired: goal-to-go distance': 1, 'repaired: distance past the goal line': 1})
+
+    def test_leaves_input_and_clean_data_alone(self):
+        '''TEST 15: the input isn't modified, and clean plays come back unchanged'''
+        before = self.raw.copy()
+        prefilter_plays(self.raw)
+        pd.testing.assert_frame_equal(self.raw, before)
+        clean = prefilter_plays(self.raw)
+        pd.testing.assert_frame_equal(prefilter_plays(clean), clean)
 
 
 if __name__ == '__main__':

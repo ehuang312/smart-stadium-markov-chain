@@ -92,11 +92,11 @@ class TestLoadCfbPbp(unittest.TestCase):
         self.assertEqual(list(plays.play_type), ['K', 'R', 'P', 'R', 'R', 'U'])
         self.assertEqual(list(plays.prev_play_type), ['S', 'K', 'R', 'P', 'S', 'R'])
 
-    def test_cleans_fields(self):
-        '''TEST 3: zero distance becomes 1 and down 0 is clipped to 1'''
+    def test_keeps_raw_fields(self):
+        '''TEST 3: down and distance are left as recorded for prefilter_plays to handle'''
         plays = load_cfb_pbp(self.path_1).set_index('play_number')
-        self.assertEqual(plays.loc[2, 'distance'], 1)
-        self.assertEqual(plays.loc[5, 'down'], 1)
+        self.assertEqual(plays.loc[2, 'distance'], 0)
+        self.assertEqual(plays.loc[5, 'down'], 0)
 
     def test_output_columns(self):
         '''TEST 4: the loader returns the documented columns'''
@@ -118,9 +118,16 @@ class TestLoadCfbPbp(unittest.TestCase):
         with self.subTest(check='one game start per game'):
             self.assertEqual((plays.prev_play_type == 'S').sum(), plays.game_id.nunique())
         with self.subTest(check='field ranges'):
-            self.assertTrue(plays.down.between(1, 4).all())
-            self.assertTrue((plays.distance >= 1).all())
             self.assertTrue(plays.yards_to_goal.between(0, 100).all())
+        with self.subTest(check='field ranges after prefilter_plays'):
+            from markovChain import prefilter_plays
+            clean = prefilter_plays(plays)
+            clean_scrimmage = clean[clean.play_type != 'K']
+            self.assertTrue(clean.down.between(1, 4).all())
+            self.assertTrue((clean_scrimmage.distance >= 1).all())
+            self.assertTrue((clean_scrimmage.distance <= clean_scrimmage.yards_to_goal).all())
+            self.assertTrue(clean_scrimmage.yards_to_goal.between(1, 99).all())
+            self.assertGreater(len(clean), 0.99 * len(plays))
 
 
 if __name__ == '__main__':

@@ -96,6 +96,8 @@ def load_cfb_pbp(paths) -> pd.DataFrame:
             play_type, prev_play_type, raw_play_type
         play_type uses the codes in PLAY_CODES; prev_play_type is the previous play in the
         same game ('S' for the first play). Kickoff rows carry placeholder down/distance values.
+        down and distance are left as recorded (a few hundred rows are impossible, e.g. down 0
+        or distance 0); pass the result through markovChain.prefilter_plays before fitting.
     '''
     paths = [paths] if isinstance(paths, (str, Path)) else paths
     raw = pd.concat([pd.read_parquet(p, columns=SOURCE_COLUMNS) for p in paths], ignore_index=True)
@@ -112,8 +114,8 @@ def load_cfb_pbp(paths) -> pd.DataFrame:
         'period': raw.period,
         'half': raw.half.astype(int),
         'seconds_left_half': raw.TimeSecsRem,
-        'down': raw.down.clip(1, 4).astype(int),
-        'distance': raw.distance.clip(lower=1),  # a handful of rows have 0 or negative distance
+        'down': raw.down,          # raw values: markovChain.prefilter_plays drops or repairs
+        'distance': raw.distance,  # impossible downs, distances and ball spots
         'yards_to_goal': raw.yards_to_goal,
         'score_diff': raw.pos_score_diff_start,
         'play_type': map_play_types(raw),

@@ -2,6 +2,7 @@ from bisect import bisect_right
 from collections import Counter, namedtuple
 
 import numpy as np
+import pandas as pd
 
 
 PLAY_TYPES = ('R', 'P', 'F', 'U', 'O')  # run, pass, field goal, punt, other -- what the model predicts
@@ -29,6 +30,53 @@ def team_run_rates(plays) -> dict:
             total[team] = total.get(team, 0) + 1
             runs[team] = runs.get(team, 0) + (play['play_type'] == 'R')
     return {team: runs[team] / total[team] for team in total}
+
+
+def prefilter_plays(plays: pd.DataFrame, report: bool = False):
+    '''
+    remove or repair plays whose pre-snap fields are impossible, before fit() / predict_proba()
+
+    Kickoffs pass through untouched (their down and distance are placeholders). For every
+    other play, in this order:
+        1. down not 1-4                  -> dropped (e.g. touchdowns recorded as down 0)
+        2. yards_to_goal not 1-99        -> dropped (a snap can't be on a goal line)
+        3. distance < 1, within 10 yards -> distance = yards_to_goal (goal-to-go with the
+           of the goal line                 distance left blank)
+        4. distance < 1, anywhere else   -> dropped (the real distance can't be recovered)
+        5. distance > yards_to_goal      -> distance = yards_to_goal (the line to gain can't
+                                            be past the goal line)
+    prev_play_type is left as loaded, so it still names the play that really came before.
+
+    Args:
+        plays: DataFrame from playByPlay.load_cfb_pbp
+        report: also return how many plays each rule touched
+
+    Returns:
+        cleaned copy of plays (down as int), or (plays, counts) if report is True
+    '''
+    plays = plays.copy()
+    scrimmage = plays.play_type != 'K'
+    bad_down = scrimmage & ~plays.down.isin([1, 2, 3, 4])
+    bad_spot = scrimmage & ~bad_down & ~plays.yards_to_goal.between(1, 99)
+    keep = ~bad_down & ~bad_spot
+    no_distance = keep & scrimmage & ~(plays.distance >= 1)
+    goal_to_go = no_distance & (plays.yards_to_goal <= 10)
+    lost_distance = no_distance & ~goal_to_go
+    keep &= ~lost_distance
+    plays.loc[goal_to_go, 'distance'] = plays.loc[goal_to_go, 'yards_to_goal']
+    past_goal = keep & scrimmage & (plays.distance > plays.yards_to_goal)
+    plays.loc[past_goal, 'distance'] = plays.loc[past_goal, 'yards_to_goal']
+
+    plays = plays[keep].reset_index(drop=True)
+    plays['down'] = plays.down.astype(int)
+    if not report:
+        return plays
+    counts = {'dropped: down not 1-4': int(bad_down.sum()),
+              'dropped: yards_to_goal not 1-99': int(bad_spot.sum()),
+              'dropped: no distance outside goal-to-go': int(lost_distance.sum()),
+              'repaired: goal-to-go distance': int(goal_to_go.sum()),
+              'repaired: distance past the goal line': int(past_goal.sum())}
+    return plays, counts
 
 
 def _records(plays):
@@ -121,7 +169,8 @@ class PlayMarkovChain:
         count play types per context from a corpus of plays
 
         Args:
-            plays: play dicts (or a DataFrame) in the format returned by playByPlay.load_cfb_pbp;
+            plays: play dicts (or a DataFrame) in the format returned by playByPlay.load_cfb_pbp,
+                   ideally passed through prefilter_plays first;
                    plays whose type isn't in self.play_types (e.g. kickoffs) are skipped
             run_rates: offense -> run rate used by the team_tendency marker; defaults to
                        team_run_rates(plays). Pass rates from a previous season to avoid

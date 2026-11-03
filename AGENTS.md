@@ -12,7 +12,7 @@ This repo holds the play-type Markov chain for the Georgia Tech VIP Smart Stadiu
 
 ## Project facts
 
-- **Model:** `PlayMarkovChain` in `markovChain.py`. `fit(plays)` takes the DataFrame from `playByPlay.load_cfb_pbp`. `next_play_type_proba(situation)` returns 5 probabilities in the order R, P, F, U, O (run, pass, field goal, punt, other), always summing to 1 and never exactly 0.
+- **Model:** `PlayMarkovChain` in `markovChain.py`. `fit(plays)` takes the DataFrame from `playByPlay.load_cfb_pbp`, passed through `prefilter_plays` first (the loader leaves impossible downs and distances as recorded). `next_play_type_proba(situation)` returns 5 probabilities in the order R, P, F, U, O (run, pass, field goal, punt, other), always summing to 1 and never exactly 0.
 - **Conflation:** `conflation.conflate_probabilities([classifier_probs, mc_probs])` multiplies the two vectors and renormalizes. The classifier's output must use the same R, P, F, U, O order. The video classifier doesn't exist yet; the notebook simulates one.
 - **Data:** cfbfastR play-by-play via `playByPlay.download_cfb_pbp(season)`. Only 2017 has been used so far. `load_cfb_pbp` accepts a list of seasons.
 - **"Other" (O)** is almost entirely pre-snap fouls in this data. PATs aren't separate rows, so there is no PAT class.

@@ -4,7 +4,7 @@ Play-type prediction for the Georgia Tech VIP Smart Stadium project. The Markov 
 
 Maintained by Ethan Huang.
 
-## Current model: v2
+## Current model: v2.1
 
 On the 2017 FBS season (5-fold cross-validation by game, 140,279 plays):
 
@@ -17,6 +17,8 @@ On the 2017 FBS season (5-fold cross-validation by game, 140,279 plays):
 
 v2 predicts from the upcoming play's down, distance, field zone, the offense's run tendency and the game situation (score and clock): 1,200 states in all. Rare states back off to broader ones, so no play type is ever given exactly 0%. Full details are in [docs/MARKOV_CHAIN_V2.md](docs/MARKOV_CHAIN_V2.md).
 
+**v2.1** (2026-11-02) adds `prefilter_plays`, which runs between loading and fitting. It drops plays whose pre-snap fields are impossible (down 0, a snap on a goal line, a distance that can't be recovered) and repairs goal-to-go plays with a blank distance and distances past the goal line. On 2017 that's 320 plays dropped and 228 repaired out of 149,883; accuracy is unchanged within noise (64.9%, Georgia Tech 80.5%).
+
 ## Quick start
 
 ```bash
@@ -25,9 +27,9 @@ pip install -r requirements.txt
 
 ```python
 from playByPlay import download_cfb_pbp, load_cfb_pbp
-from markovChain import PlayMarkovChain
+from markovChain import PlayMarkovChain, prefilter_plays
 
-plays = load_cfb_pbp(download_cfb_pbp(2017))   # downloads once (~72 MB) into data/cfb_pbp/
+plays = prefilter_plays(load_cfb_pbp(download_cfb_pbp(2017)))   # downloads once (~72 MB) into data/cfb_pbp/
 mc = PlayMarkovChain().fit(plays)
 
 situation = dict(offense='Georgia Tech', down=3, distance=8, yards_to_goal=65,
