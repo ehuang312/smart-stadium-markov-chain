@@ -1,7 +1,13 @@
 import numpy as np
 
 
-def conflate_probabilities(source_probs: list, class_weights: np.ndarray = None, eps: float = 1e-9) -> np.ndarray:
+# lowest probability any source may give a class before multiplying; without it one source's
+# (near-)zero vetoes a class no matter how sure the other source is
+DEFAULT_FLOOR = 1e-4
+
+
+def conflate_probabilities(source_probs: list, class_weights: np.ndarray = None,
+                           floor: float = DEFAULT_FLOOR) -> np.ndarray:
     '''
     fuse multiple class-probability vectors (e.g. a video classifier's play-type
     output and a Markov Chain's next-play-type prediction) via entry-wise
@@ -15,14 +21,16 @@ def conflate_probabilities(source_probs: list, class_weights: np.ndarray = None,
         class_weights: optional per-class weights (learned via fit_conflation_weights)
                        applied on top of the elementwise product, to correct for any
                        consistent bias between the sources
-        eps: numerical floor so log() never sees zero
+        floor: each source's probabilities are raised to at least this before multiplying,
+               so a class one source rules out (p ~ 0) can still win if the other source
+               is confident enough; must be > 0
 
     Returns:
         the fused, renormalized probability vector
     '''
-    log_fused = np.sum([np.log(p + eps) for p in source_probs], axis=0)
+    log_fused = np.sum([_log_floor(p, floor) for p in source_probs], axis=0)
     if class_weights is not None:
-        log_fused = log_fused + np.log(class_weights + eps)
+        log_fused = log_fused + _log_floor(class_weights, floor)
 
     log_fused = log_fused - log_fused.max()  # numerical stability before exp
     fused = np.exp(log_fused)
@@ -30,7 +38,7 @@ def conflate_probabilities(source_probs: list, class_weights: np.ndarray = None,
 
 
 def fit_conflation_weights(samples: list, num_classes: int, epochs: int = 500, lr: float = 0.5,
-                            eps: float = 1e-9) -> np.ndarray:
+                            floor: float = DEFAULT_FLOOR) -> np.ndarray:
     '''
     learn per-class weights for conflate_probabilities via gradient descent on
     cross-entropy loss -- the "final Neural Network that optimally calculates
@@ -43,7 +51,7 @@ def fit_conflation_weights(samples: list, num_classes: int, epochs: int = 500, l
         num_classes: number of play-type classes
         epochs: gradient descent iterations
         lr: learning rate
-        eps: numerical floor so log() never sees zero
+        floor: same probability floor as conflate_probabilities (use the same value in both)
 
     Returns:
         learned per-class weight vector, to pass as class_weights to conflate_probabilities
@@ -54,7 +62,7 @@ def fit_conflation_weights(samples: list, num_classes: int, epochs: int = 500, l
     for _ in range(epochs):
         grad = np.zeros(num_classes)
         for cnn_probs, mc_probs, label in samples:
-            logits = np.log(cnn_probs + eps) + np.log(mc_probs + eps) + beta
+            logits = _log_floor(cnn_probs, floor) + _log_floor(mc_probs, floor) + beta
             logits = logits - logits.max()
             fused = np.exp(logits)
             fused /= fused.sum()
@@ -62,6 +70,12 @@ def fit_conflation_weights(samples: list, num_classes: int, epochs: int = 500, l
         beta -= lr * grad / len(samples)
 
     return np.exp(beta)
+
+
+def _log_floor(p, floor: float) -> np.ndarray:
+    if floor <= 0:
+        raise ValueError('floor must be > 0')
+    return np.log(np.maximum(np.asarray(p, dtype=float), floor))
 
 
 if __name__ == '__main__':
