@@ -10,6 +10,8 @@ Every version of the Markov chain is kept here as its own file. `markovChain.py`
 
 Accuracy and log loss are 5-fold cross-validation by game on the 2017 FBS season (140,279 test plays; 139,959 for v2.1 after prefiltering, where v2 scores 64.9% / 0.7215 on the same plays).
 
+Loader fix after v2.1 (2026-11-02, model unchanged): fumble return touchdown rows are dropped (they repeat the play before), and roughing-the-passer, intentional-grounding and kickoff penalties are labelled pass / kickoff instead of other. v2.1 with these labels: 64.9%, log loss 0.720, Georgia Tech 80.5%.
+
 ## Adding a version
 
 1. Copy the current model to `markovChain_vN.py` (next number) and make the changes there.

@@ -43,6 +43,12 @@ class TestMapPlayTypes(unittest.TestCase):
                 'Smith run for 12 yds, PENALTY GT holding 10 yards, NO PLAY.'), 'R'),
             ('penalty on a punt', dict(play_type='Penalty', play_text=
                 'Jones punt for 41 yds, PENALTY CLEM roughing the kicker, NO PLAY.'), 'U'),
+            ('roughing the passer', dict(play_type='Penalty', play_text=
+                'CLEMSON Penalty, Roughing Passer (15 Yards) to the GTech 40 for a 1ST down'), 'P'),
+            ('intentional grounding', dict(play_type='Penalty', play_text=
+                'GEORGIA TECH Penalty, Intentional Grounding (Smith) to the GTech 20'), 'P'),
+            ('penalty on a kickoff', dict(play_type='Penalty', play_text=
+                'Jones kickoff 60 yards to the GT5, Lee return to the GT30, PENALTY CLEM offside 5 yards'), 'K'),
             ('pre-snap foul', dict(play_type='Penalty', play_text='GEORGIA TECH Penalty, False Start (-5 Yards)'), 'O'),
             ('safety', dict(play_type='Safety'), 'O'),
         ]
@@ -70,6 +76,7 @@ class TestLoadCfbPbp(unittest.TestCase):
             raw_row(game_id=1, game_play_number=2, play_type='Rush', rush=1.0, distance=0.0),
             raw_row(game_id=1, game_play_number=5, play_type='Rushing Touchdown', rush=1.0, down=0.0),
             raw_row(game_id=1, game_play_number=6, play_type='End Period', down=0.0),
+            raw_row(game_id=1, game_play_number=7, play_type='Fumble Return Touchdown'),
         ]
         game_2 = [
             raw_row(game_id=2, game_play_number=1, play_type='Rush', rush=1.0),
@@ -81,7 +88,7 @@ class TestLoadCfbPbp(unittest.TestCase):
         pd.DataFrame(game_2).to_parquet(self.path_2)
 
     def test_drops_non_plays(self):
-        '''TEST 1: timeouts and end-of-period rows are removed'''
+        '''TEST 1: timeouts, end-of-period and fumble-return-touchdown rows are removed'''
         plays = load_cfb_pbp(self.path_1)
         self.assertEqual(list(plays.raw_play_type), ['Kickoff', 'Rush', 'Pass Reception', 'Rushing Touchdown'])
 

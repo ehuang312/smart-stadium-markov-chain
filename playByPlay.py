@@ -21,6 +21,9 @@ PLAY_CODES = {
 # rows that are not plays at all
 ADMIN_TYPES = {'End Period', 'End of Half', 'End of Game', 'Timeout', 'Uncategorized', 'Uncategorized Touchdown',
                'Defensive 2pt Conversion'}
+# rows that repeat an earlier snap rather than being a new one: a fumble return touchdown is the
+# scoring summary of the play before it (often a sack or catch whose text leaves out the fumble)
+NOT_SNAP_TYPES = {'Fumble Return Touchdown'}
 FIELD_GOAL_TYPES = {'Field Goal Good', 'Field Goal Missed', 'Blocked Field Goal', 'Blocked Field Goal Touchdown',
                     'Missed Field Goal Return'}
 PUNT_TYPES = {'Punt', 'Blocked Punt', 'Blocked Punt Touchdown', 'Blocked Punt (Safety)', 'Punt Return Touchdown',
@@ -52,8 +55,9 @@ def map_play_types(raw: pd.DataFrame) -> np.ndarray:
     collapse cfbfastR's ~40 play_type labels into the codes in PLAY_CODES
 
     Fumbles, sacks and interceptions are sorted with the rush/pass flags. "Penalty" rows
-    are sorted by their text: most are a real run or pass that was wiped out by the flag,
-    the rest are pre-snap fouls where no play happened (-> 'O'). PATs are not separate
+    are sorted by their text: a run, pass, punt, field goal or kickoff the flag was called
+    on keeps that type (roughing the passer and intentional grounding count as passes),
+    and the rest are pre-snap fouls where no play happened (-> 'O'). PATs are not separate
     rows in this data (they're folded into the touchdown play), so there is no PAT code.
 
     Args:
@@ -73,11 +77,12 @@ def map_play_types(raw: pd.DataFrame) -> np.ndarray:
     codes[play_type.isin(KICKOFF_TYPES).values] = 'K'
 
     penalty = (play_type == 'Penalty').values
-    pass_text = text.str.contains(r'\bpass\b|sacked').values
+    pass_text = text.str.contains(r'\bpass\b|sacked|roughing (?:the )?passer|grounding').values
     codes[penalty & pass_text] = 'P'
     codes[penalty & ~pass_text & text.str.contains(r'\brun\b|\brush\b|\brushed\b').values] = 'R'
     codes[penalty & text.str.contains('punt').values] = 'U'
     codes[penalty & text.str.contains('field goal').values] = 'F'
+    codes[penalty & text.str.contains(r'kickoff|kicks? off|onside').values] = 'K'
     return codes
 
 
@@ -101,7 +106,7 @@ def load_cfb_pbp(paths) -> pd.DataFrame:
     '''
     paths = [paths] if isinstance(paths, (str, Path)) else paths
     raw = pd.concat([pd.read_parquet(p, columns=SOURCE_COLUMNS) for p in paths], ignore_index=True)
-    raw = raw[~raw.play_type.isin(ADMIN_TYPES)]
+    raw = raw[~raw.play_type.isin(ADMIN_TYPES | NOT_SNAP_TYPES)]
     raw = raw.sort_values(['game_id', 'game_play_number']).reset_index(drop=True)
 
     plays = pd.DataFrame({
