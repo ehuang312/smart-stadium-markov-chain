@@ -4,7 +4,7 @@ Play-type prediction for the Georgia Tech VIP Smart Stadium project. The Markov 
 
 Maintained by Ethan Huang.
 
-## Current model: v2.1
+## Current model: v2.2
 
 On the 2017 FBS season (5-fold cross-validation by game, 140,279 plays):
 
@@ -37,7 +37,27 @@ situation = dict(offense='Georgia Tech', down=3, distance=8, yards_to_goal=65,
 mc.next_play_type_proba(situation)   # [0.27, 0.70, 0.00, 0.00, 0.03] over R, P, F, U, O
 ```
 
-Run the tests with `python -m pytest tests -q`. The notebook [notebooks/conflatedPlayPrediction.ipynb](notebooks/conflatedPlayPrediction.ipynb) runs the whole workflow, including the comparison against v1 and the marker cross-validation.
+Run the tests with `python -m pytest tests -q`.
+
+### Saved model and CSV outputs (v2.2)
+
+```bash
+python exportOutputs.py                      # 2017; add --seasons 2016 2017 for more
+```
+
+This writes:
+
+- `outputs/predictions_2017.csv`: every scrimmage play with its situation, the 5 probabilities, the predicted and actual play type. Predictions are out-of-fold (5-fold cross-validation by game), so no play is predicted by a model that saw its game.
+- `outputs/situation_table_2017.csv`: the probabilities for all 1,200 situations, with how many training plays each had.
+- `models/markov_v2_2_2017.json`: the model trained on every play. Load it without the data:
+
+```python
+from markovChain import PlayMarkovChain
+mc = PlayMarkovChain.load('models/markov_v2_2_2017.json')
+mc.next_play_type_proba(situation)
+```
+
+The notebook [notebooks/conflatedPlayPrediction.ipynb](notebooks/conflatedPlayPrediction.ipynb) runs the whole workflow, including the comparison against v1 and the marker cross-validation.
 
 ## Layout
 
@@ -45,6 +65,9 @@ Run the tests with `python -m pytest tests -q`. The notebook [notebooks/conflate
 |---|---|
 | `markovChain.py` | The current model (always the latest version) |
 | `playByPlay.py` | Downloads and cleans cfbfastR play-by-play data |
+| `exportOutputs.py` | Trains the model and writes the CSV outputs and the saved model (see below) |
+| `models/` | Saved trained models (`markov_v2_2_2017.json`), loadable without the play-by-play data |
+| `outputs/` | CSVs from `exportOutputs.py` (gitignored; regenerate with the script) |
 | `conflation.py` | Fuses the Markov chain with classifier probabilities |
 | `versions/` | Every model version as its own file: `markovChain_v1.py`, `markovChain_v2.py`, … |
 | `archive/` | Older code kept for reference: v1 with its toy-data notebook, and last year's `MarkovChain.py` |

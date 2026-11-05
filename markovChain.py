@@ -1,8 +1,13 @@
+import json
 from bisect import bisect_right
 from collections import Counter, namedtuple
+from itertools import product
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+MODEL_VERSION = '2.2'
 
 
 PLAY_TYPES = ('R', 'P', 'F', 'U', 'O')  # run, pass, field goal, punt, other -- what the model predicts
@@ -150,6 +155,7 @@ class PlayMarkovChain:
         self.backoff_strength = backoff_strength
         self.run_rates = {}
         self.counts = None  # set by fit(): one dict per back-off level, context prefix -> counts per play type
+        self.metadata = {}  # free-form info saved with the model, e.g. which seasons it was trained on
 
     @property
     def n_contexts(self) -> int:
@@ -236,6 +242,79 @@ class PlayMarkovChain:
             if n is not None:
                 proba = (n + self.backoff_strength * proba) / (n.sum() + self.backoff_strength)
         return proba
+
+    def situation_table(self, play_types: tuple = None) -> pd.DataFrame:
+        '''
+        predicted probabilities for every possible context, one row per context
+
+        Columns are the markers (bucket labels), n_plays (training plays in exactly that
+        context; 0 means the prediction comes entirely from coarser contexts), one probability
+        column per play type, and predicted (the most likely play type). The team_tendency
+        rows don't depend on which team: every team in a bucket gets the same prediction.
+        '''
+        if self.counts is None:
+            raise RuntimeError('call fit() before predicting')
+        play_types = play_types or self.play_types
+        finest = self.counts[len(self.markers)]
+        rows = []
+        for ctx in product(*(range(len(MARKERS[m].labels)) for m in self.markers)):
+            proba = self._select(self._context_proba(ctx), play_types)
+            n = finest.get(ctx)
+            rows.append({**{m: MARKERS[m].labels[b] for m, b in zip(self.markers, ctx)},
+                         'n_plays': 0 if n is None else int(n.sum()),
+                         **dict(zip(play_types, proba)),
+                         'predicted': play_types[int(proba.argmax())]})
+        return pd.DataFrame(rows)
+
+    def save(self, path, metadata: dict = None) -> Path:
+        '''
+        write the trained model to a JSON file that PlayMarkovChain.load can read back
+
+        Saves the markers, play types, back-off strength, team run rates and every count,
+        so a loaded model gives exactly the same predictions without the play-by-play data.
+
+        Args:
+            path: file to write (parent folders are created)
+            metadata: optional extra info to store with it, e.g. {'seasons': [2017]}
+
+        Returns:
+            the path written
+        '''
+        if self.counts is None:
+            raise RuntimeError('call fit() before saving')
+        state = {
+            'format': 'PlayMarkovChain',
+            'model_version': MODEL_VERSION,
+            'metadata': metadata or {},
+            'markers': list(self.markers),
+            'play_types': list(self.play_types),
+            'backoff_strength': self.backoff_strength,
+            'run_rates': self.run_rates,
+            'counts': [{'contexts': [list(ctx) for ctx in level],
+                        'counts': [n.tolist() for n in level.values()]} for level in self.counts],
+        }
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state), encoding='utf-8')
+        return path
+
+    @classmethod
+    def load(cls, path) -> 'PlayMarkovChain':
+        '''
+        read a model written by save(); its metadata is on model.metadata
+
+        Markers registered at runtime (extra entries added to MARKERS) must be registered
+        again before loading a model that uses them.
+        '''
+        state = json.loads(Path(path).read_text(encoding='utf-8'))
+        if state.get('format') != 'PlayMarkovChain':
+            raise ValueError(f'{path} is not a saved PlayMarkovChain')
+        model = cls(tuple(state['markers']), tuple(state['play_types']), state['backoff_strength'])
+        model.run_rates = state['run_rates']
+        model.counts = [{tuple(ctx): np.array(n, dtype=float) for ctx, n in zip(level['contexts'], level['counts'])}
+                        for level in state['counts']]
+        model.metadata = state['metadata']
+        return model
 
     def _select(self, proba: np.ndarray, play_types: tuple = None) -> np.ndarray:
         play_types = play_types or self.play_types

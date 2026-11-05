@@ -2,6 +2,7 @@ import unittest
 
 import sys
 import os
+import tempfile
 import numpy as np
 import pandas as pd
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -186,6 +187,46 @@ class TestPlayMarkovChain(unittest.TestCase):
             return -np.log(P[np.arange(len(y)), y]).mean()
 
         self.assertLess(log_loss(PlayMarkovChain()), log_loss(PlayMarkovChain(markers=())) - 0.25)
+
+
+class TestSaveAndTable(unittest.TestCase):
+
+    def setUp(self):
+        self.model = PlayMarkovChain().fit(corpus())
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = os.path.join(tmp.name, 'models', 'mc.json')
+
+    def test_save_load_round_trip(self):
+        '''TEST 16: a saved and reloaded model gives identical predictions and keeps its metadata'''
+        self.model.save(self.path, metadata={'seasons': [2017]})
+        loaded = PlayMarkovChain.load(self.path)
+        situations = [play(), play(down=3, distance=9), play(down=4, distance=9, offense='Unknown U'),
+                      play(down=2, distance=1, yards_to_goal=5, half=2, period=4, seconds_left_half=60)]
+        np.testing.assert_array_equal(loaded.predict_proba(situations), self.model.predict_proba(situations))
+        self.assertEqual(loaded.markers, self.model.markers)
+        self.assertEqual(loaded.run_rates, self.model.run_rates)
+        self.assertEqual(loaded.metadata, {'seasons': [2017]})
+
+    def test_save_needs_fit_and_load_checks_format(self):
+        '''TEST 17: an unfitted model can't be saved, and load rejects other JSON files'''
+        with self.assertRaises(RuntimeError):
+            PlayMarkovChain().save(self.path)
+        os.makedirs(os.path.dirname(self.path))
+        with open(self.path, 'w') as f:
+            f.write('{"something": "else"}')
+        with self.assertRaises(ValueError):
+            PlayMarkovChain.load(self.path)
+
+    def test_situation_table(self):
+        '''TEST 18: one row per possible context, valid probabilities, training counts per row'''
+        table = self.model.situation_table()
+        self.assertEqual(len(table), self.model.n_contexts)
+        np.testing.assert_allclose(table[list(PLAY_TYPES)].sum(axis=1), 1)
+        self.assertTrue((table[list(PLAY_TYPES)] > 0).all().all())
+        self.assertEqual(table.n_plays.sum(), 25)  # corpus() has 25 non-kickoff plays
+        third_long = table[(table.down == '3rd') & (table.distance == '7-10') & (table.n_plays > 0)]
+        self.assertEqual(list(third_long.predicted), ['P'])
 
 
 class TestPrefilterPlays(unittest.TestCase):

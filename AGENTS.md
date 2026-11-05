@@ -30,6 +30,7 @@ This repo holds the play-type Markov chain for the Georgia Tech VIP Smart Stadiu
 ```bash
 pip install -r requirements.txt
 python -m pytest tests -q
+python exportOutputs.py      # writes outputs/*.csv (gitignored) and models/markov_v*_<seasons>.json
 ```
 
 The notebook expects to run from the repo root or from `notebooks/`; it finds the root by looking for `conflation.py`.

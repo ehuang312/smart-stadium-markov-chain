@@ -1,6 +1,9 @@
 # downloaded play-by-play seasons (70-130 MB each); fetch with playByPlay.download_cfb_pbp
 data/
 
+# CSVs written by exportOutputs.py (predictions are ~25 MB per season); regenerate any time
+outputs/
+
 # secrets
 .env
 
